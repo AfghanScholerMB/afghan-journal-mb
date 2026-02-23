@@ -1,0 +1,32 @@
+<nav class="navbar navbar-expand-lg bg-white border-bottom">
+	<div class="container">
+		<a class="navbar-brand fw-bold" href="/">Afghan Journal MB</a>
+		<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+			<span class="navbar-toggler-icon"></span>
+		</button>
+		<div id="nav" class="collapse navbar-collapse">
+			<ul class="navbar-nav ms-auto gap-2">
+				<li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+				<li class="nav-item"><a class="nav-link" href="/browse">Browse</a></li>
+				<li class="nav-item"><a class="nav-link" href="/about">About</a></li>
+				<li class="nav-item"><a class="nav-link" href="/contact">Contact</a></li>
+
+				<% if (user) { %>
+					<li class="nav-item"><a class="nav-link" href="/upload">Upload</a></li>
+					<li class="nav-item"><a class="nav-link" href="/profile">Profile</a></li>
+					<% if (user.role === 'admin' || user.role === 'moderator') { %>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					<% } %>
+					<li class="nav-item">
+						<form method="post" action="/logout">
+							<button class="btn btn-outline-dark btn-sm">Logout</button>
+						</form>
+					</li>
+				<% } else { %>
+					<li class="nav-item"><a class="btn btn-outline-dark btn-sm" href="/login">Login</a></li>
+					<li class="nav-item"><a class="btn btn-dark btn-sm" href="/register">Register</a></li>
+				<% } %>
+			</ul>
+		</div>
+	</div>
+</nav>
