@@ -3,59 +3,135 @@ const db = require("../db");
 
 const router = express.Router();
 
+/**
+ * HOME
+ */
 router.get("/", (req, res) => {
-	const latest = db.prepare(`
-		SELECT d.id, d.title, d.authors, d.year, c.name AS category, d.document_type
-		FROM documents d JOIN categories c ON c.id = d.category_id
-		WHERE d.status='APPROVED'
-		ORDER BY d.created_at DESC
-		LIMIT 6
-	`).all();
+  try {
+    const latest = db
+      .prepare(`
+        SELECT
+          d.*,
+          u.name AS uploader_name,
+          COALESCE(c.name, d.category) AS category_name
+        FROM documents d
+        LEFT JOIN users u ON u.id = d.uploaded_by
+        LEFT JOIN categories c ON c.slug = d.category OR c.name = d.category
+        WHERE d.status = 'approved'
+        ORDER BY d.created_at DESC
+        LIMIT 10
+      `)
+      .all();
 
-	const top = db.prepare(`
-		SELECT d.id, d.title, d.authors, d.year, c.name AS category, d.document_type, d.downloads_count
-		FROM documents d JOIN categories c ON c.id = d.category_id
-		WHERE d.status='APPROVED'
-		ORDER BY d.downloads_count DESC
-		LIMIT 6
-	`).all();
+    const top = db
+      .prepare(`
+        SELECT
+          d.id,
+          d.title,
+          d.authors,
+          d.year,
+          COALESCE(c.name, d.category) AS category,
+          d.document_type,
+          d.downloads_count
+        FROM documents d
+        LEFT JOIN categories c ON c.slug = d.category OR c.name = d.category
+        WHERE d.status = 'approved'
+        ORDER BY d.downloads_count DESC
+        LIMIT 6
+      `)
+      .all();
 
-	const categories = db.prepare("SELECT id, name, slug FROM categories ORDER BY name").all();
-	res.render("home", { latest, top, categories });
+    const categories = db
+      .prepare(`SELECT id, name, slug FROM categories ORDER BY name`)
+      .all();
+
+    res.render("home", {
+      user: req.session?.user || null,
+      latest,
+      top,
+      categories,
+    });
+  } catch (err) {
+    console.error("Home page error:", err);
+    res.status(500).send("Internal Server Error");
+  }
 });
 
-router.get("/about", (req, res) => res.render("about"));
-router.get("/terms", (req, res) => res.render("terms"));
-router.get("/privacy", (req, res) => res.render("privacy"));
+/**
+ * BROWSE
+ * Optional filters: ?category=engineering  and/or  ?type=article
+ */
+router.get("/browse", (req, res) => {
+  try {
+    const { category, type, q } = req.query;
 
-router.get("/contact", (req, res) => res.render("contact", { ok: false, error: null }));
-router.post("/contact", (req, res) => {
-	const { name, email, message } = req.body;
-	if (!name || !email || !message) return res.render("contact", { ok: false, error: "All fields are required." });
-	db.prepare("INSERT INTO contact_messages(name, email, message) VALUES (?, ?, ?)").run(name, email, message);
-	res.render("contact", { ok: true, error: null });
+    let where = "WHERE d.status = 'approved'";
+    const params = {};
+
+    if (category && category.trim()) {
+      where += " AND (d.category = @category OR EXISTS (SELECT 1 FROM categories c WHERE (c.slug = @category OR c.name = @category) AND (c.slug = d.category OR c.name = d.category)))";
+      params.category = category.trim();
+    }
+
+    if (type && type.trim()) {
+      where += " AND d.document_type = @type";
+      params.type = type.trim();
+    }
+
+    if (q && q.trim()) {
+      where += `
+        AND (
+          d.title LIKE @q
+          OR d.authors LIKE @q
+          OR d.abstract LIKE @q
+          OR d.keywords LIKE @q
+        )
+      `;
+      params.q = `%${q.trim()}%`;
+    }
+
+    const docs = db
+      .prepare(`
+        SELECT
+          d.*,
+          u.name AS uploader_name,
+          COALESCE(c.name, d.category) AS category_name
+        FROM documents d
+        LEFT JOIN users u ON u.id = d.uploaded_by
+        LEFT JOIN categories c ON c.slug = d.category OR c.name = d.category
+        ${where}
+        ORDER BY d.created_at DESC
+      `)
+      .all(params);
+
+    const categories = db
+      .prepare(`SELECT id, name, slug FROM categories ORDER BY name`)
+      .all();
+
+    res.render("browse", {
+      user: req.session?.user || null,
+      docs,
+      categories,
+      filters: { category: category || "", type: type || "", q: q || "" },
+    });
+  } catch (err) {
+    console.error("Browse error:", err);
+    res.status(500).send("Internal Server Error");
+  }
 });
 
-router.get("/profile", (req, res) => {
-	if (!res.locals.user) return res.redirect("/login");
+/**
+ * ABOUT
+ */
+router.get("/about", (req, res) => {
+  res.render("about", { user: req.session?.user || null });
+});
 
-	const myUploads = db.prepare(`
-		SELECT d.*, c.name AS category
-		FROM documents d JOIN categories c ON c.id=d.category_id
-		WHERE d.uploader_id=?
-		ORDER BY d.created_at DESC
-	`).all(res.locals.user.id);
-
-	const bookmarks = db.prepare(`
-		SELECT d.id, d.title, d.authors, d.year, c.name AS category, d.document_type
-		FROM bookmarks b
-		JOIN documents d ON d.id=b.document_id
-		JOIN categories c ON c.id=d.category_id
-		WHERE b.user_id=? AND d.status='APPROVED'
-		ORDER BY b.created_at DESC
-	`).all(res.locals.user.id);
-
-	res.render("profile", { myUploads, bookmarks });
+/**
+ * CONTACT
+ */
+router.get("/contact", (req, res) => {
+  res.render("contact", { user: req.session?.user || null });
 });
 
 module.exports = router;
